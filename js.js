@@ -181,7 +181,7 @@
         model.colorBlendMode =
           C.ModelColorBlendMode.HIGHLIGHT;
 
-        model.colorBlendAmount = 0.18;
+        model.colorBlendAmount = 0.38;
       }
 
       viewer.scene.primitives.add(model);

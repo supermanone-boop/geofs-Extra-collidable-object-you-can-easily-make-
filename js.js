@@ -4,7 +4,8 @@
 (async () => {
   const HF = "https://huggingface.co/supermanone-boop/ITAMI/resolve/main/";
   const GH = "https://raw.githubusercontent.com/supermanone-boop/model/main/";
-  const BRIGHTNESS = 1.18;
+
+  const BRIGHTNESS = 2.845;
 
   const configs = [
     {
@@ -65,6 +66,7 @@
 
   const g = window.geofs;
   const C = window.Cesium;
+  const viewer = g.api.viewer;
 
   // ==================================================
   // GEOFS HD SETTINGS
@@ -72,17 +74,22 @@
 
   window.geofsNewHDState = true;
 
+  if (window.jQuery) {
+    jQuery("body").trigger("terrainProviderWillUpdate");
+  }
+
   g.geoIpUpdate = function () {
     delete g.api.analytics;
 
     document.body.classList.add("geofs-hd");
 
-    g.api.imageryProvider = new C.UrlTemplateImageryProvider({
-      maximumLevel: 21,
-      hasAlphaChannel: false,
-      subdomains: ["mt0", "mt1", "mt2", "mt3"],
-      url: "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
-    });
+    g.api.imageryProvider =
+      new C.UrlTemplateImageryProvider({
+        maximumLevel: 21,
+        hasAlphaChannel: false,
+        subdomains: ["mt0", "mt1", "mt2", "mt3"],
+        url: "https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
+      });
 
     g.api.setImageryProvider(
       g.api.imageryProvider,
@@ -104,20 +111,23 @@
 
   g.geoIpUpdate();
 
-  g.api.hdOn = true;
+  g.api.hdOn = window.geofsNewHDState;
+
+  // 空・描画品質の更新
+  g.api.renderingQuality();
 
   if (window.jQuery) {
-    jQuery("body").trigger("terrainProviderWillUpdate");
     jQuery("body").trigger("terrainProviderUpdate");
   }
 
-  g.mapXYZ = "https://data.geo-fs.com/osm/{z}/{x}/{y}.png";
+  g.mapXYZ =
+    "https://data.geo-fs.com/osm/{z}/{x}/{y}.png";
+
+  viewer.scene.requestRender();
 
   // ==================================================
   // KADO MODEL LOADER
   // ==================================================
-
-  const viewer = g.api.viewer;
 
   for (const cfg of configs) {
     try {
@@ -156,6 +166,7 @@
         scale: 1
       });
 
+      // Brightness correction
       model.color = new C.Color(
         BRIGHTNESS,
         BRIGHTNESS,
@@ -185,6 +196,8 @@
       );
     }
   }
+
+  viewer.scene.requestRender();
 
   console.log("[KADO] HD + KADO system ready.");
 

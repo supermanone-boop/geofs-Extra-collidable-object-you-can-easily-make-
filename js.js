@@ -1,964 +1,117 @@
 
-"use strict";
-
-// ============================================================
-// KADO AIRPORT MODEL SYSTEM
-// KADO1: Hugging Face
-// KADO2: GitHub
-// KADO4: GitHub
-// ============================================================
-
-// ------------------------------
-// MODEL URL
-// ------------------------------
-
-const HF_BASE =
-  "https://huggingface.co/supermanone-boop/ITAMI/resolve/main/";
-
-const GH_BASE =
-  "https://raw.githubusercontent.com/supermanone-boop/model/main/";
-
-// ------------------------------
-// GLOBAL SETTINGS
-// ------------------------------
-
-const BASE_LON = 135.442885;
-const BASE_LAT = 34.790662;
-
-const MAX_RADIUS = 2000;
-
-const BRIGHTNESS = 1.18;
-
-// ------------------------------
-// MODEL DEFINITIONS
-// ------------------------------
-
-const KADO_CONFIG = [
-  {
-    name: "KADO1",
-    url: HF_BASE + "kado_01.glb",
-
-    lon: 135.442825,
-    lat: 34.788936,
-    height: 8.888973662526322,
-
-    scale: 9.9,
-
-    rotationX: 0,
-    rotationY: 0,
-    rotationZ: -135
-  },
-
-  {
-    name: "KADO2",
-    url: GH_BASE + "kado_02.glb",
-
-    lon: 135.437349,
-    lat: 34.793579,
-    height: 8.888973662526322,
-
-    scale: 9.9,
-
-    rotationX: 0,
-    rotationY: 0,
-    rotationZ: -135
-  },
-
-  {
-    name: "KADO4",
-    url: GH_BASE + "kado_04.glb",
-
-    lon: 135.442945,
-    lat: 34.791555,
-    height: 8.888973662526322,
-
-    scale: 9.9,
-
-    rotationX: 0,
-    rotationY: 0,
-    rotationZ: -135
-  }
-];
-
-// ============================================================
-// GLOBAL VARIABLES
-// ============================================================
-
-let viewer = null;
-
-let KADO_MODELS = [];
-
-let animationFrame = null;
-
-let isRunning = false;
-
-let editorPanel = null;
-
-let selectedModel = "KADO1";
-
-// ============================================================
-// DISTANCE CALCULATION
-// ============================================================
-
-const centerPosition =
-  Cesium.Cartesian3.fromDegrees(
-    BASE_LON,
-    BASE_LAT,
-    0
-  );
-
-function getDistance(settings) {
-
-  const target =
-    Cesium.Cartesian3.fromDegrees(
-      settings.lon,
-      settings.lat,
-      0
-    );
-
-  return Cesium.Cartesian3.distance(
-    centerPosition,
-    target
-  );
-}
-
-// ============================================================
-// POSITION LIMIT
-// ============================================================
-
-function limitPosition(settings) {
-
-  const distance = getDistance(settings);
-
-  if (distance <= MAX_RADIUS) {
-    return;
-  }
-
-  const target =
-    Cesium.Cartesian3.fromDegrees(
-      settings.lon,
-      settings.lat,
-      0
-    );
-
-  const direction =
-    Cesium.Cartesian3.subtract(
-      target,
-      centerPosition,
-      new Cesium.Cartesian3()
-    );
-
-  Cesium.Cartesian3.normalize(
-    direction,
-    direction
-  );
-
-  const limited =
-    Cesium.Cartesian3.add(
-      centerPosition,
-      Cesium.Cartesian3.multiplyByScalar(
-        direction,
-        MAX_RADIUS,
-        new Cesium.Cartesian3()
-      ),
-      new Cesium.Cartesian3()
-    );
-
-  const cartographic =
-    Cesium.Cartographic.fromCartesian(
-      limited
-    );
-
-  settings.lon =
-    Cesium.Math.toDegrees(
-      cartographic.longitude
-    );
-
-  settings.lat =
-    Cesium.Math.toDegrees(
-      cartographic.latitude
-    );
-}
-
-// ============================================================
-// MODEL MATRIX
-// ============================================================
-
-function updateModel(entry) {
-
-  if (!entry || !entry.model) return;
-
-  const settings = entry.settings;
-
-  limitPosition(settings);
-
-  const position =
-    Cesium.Cartesian3.fromDegrees(
-      settings.lon,
-      settings.lat,
-      settings.height
-    );
-
-  const hpr =
-    new Cesium.HeadingPitchRoll(
-      Cesium.Math.toRadians(
-        settings.rotationZ
-      ),
-      Cesium.Math.toRadians(
-        settings.rotationX
-      ),
-      Cesium.Math.toRadians(
-        settings.rotationY
-      )
-    );
-
-  const rotation =
-    Cesium.Transforms.headingPitchRollQuaternion(
-      position,
-      hpr
-    );
-
-  const matrix =
-    Cesium.Matrix4.fromTranslationQuaternionRotationScale(
-      position,
-      rotation,
-      new Cesium.Cartesian3(
-        settings.scale,
-        settings.scale,
-        settings.scale
-      )
-    );
-
-  entry.model.modelMatrix = matrix;
-}
-
-// ============================================================
-// BRIGHTNESS CORRECTION
-// ============================================================
-
-function brightenModel(model) {
-
-  // Cesium model color highlight
-  // This is a display tint, not a texture edit.
-
-  model.color = new Cesium.Color(
-    BRIGHTNESS,
-    BRIGHTNESS,
-    BRIGHTNESS,
-    1
-  );
-
-  if (
-    Cesium.ModelColorBlendMode &&
-    Cesium.ModelColorBlendMode.HIGHLIGHT !== undefined
-  ) {
-
-    model.colorBlendMode =
-      Cesium.ModelColorBlendMode.HIGHLIGHT;
-
-    model.colorBlendAmount = 0.18;
-  }
-}
-
-// ============================================================
-// LOAD MODEL
-// ============================================================
-
-async function loadModel(config) {
-
-  console.log(
-    "Loading " + config.name,
-    config.url
-  );
-
-  const model =
-    await Cesium.Model.fromGltf({
-
-      url: config.url,
-
-      modelMatrix: Cesium.Matrix4.IDENTITY,
-
-      scale: 1
-    });
-
-  viewer.scene.primitives.add(model);
-
-  const entry = {
-
-    name: config.name,
-
-    settings: Object.assign({}, config),
-
-    model: model,
-
-    loaded: true
-  };
-
-  KADO_MODELS.push(entry);
-
-  brightenModel(model);
-
-  updateModel(entry);
-
-  console.log(
-    "Loaded successfully:",
-    config.name
-  );
-
-  return entry;
-}
-
-// ============================================================
-// LOAD ALL MODELS
-// ============================================================
-
-async function loadAllModels() {
-
-  viewer = geofs.api.viewer;
-
-  console.log(
-    "KADO MODEL SYSTEM START"
-  );
-
-  for (const config of KADO_CONFIG) {
-
-    try {
-
-      await loadModel(config);
-
-    } catch (error) {
-
-      console.error(
-        "FAILED:",
-        config.name,
-        error
-      );
-
+(async () => {
+  "use strict";
+
+  const HF = "https://huggingface.co/supermanone-boop/ITAMI/resolve/main/";
+  const GH = "https://raw.githubusercontent.com/supermanone-boop/model/main/";
+
+  const models = [
+    {
+      name: "KADO1",
+      url: HF + "kado_01.glb",
+      lon: 135.442825,
+      lat: 34.788936,
+      height: 8.888973662526322,
+      scale: 9.9,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: -135
+    },
+    {
+      name: "KADO2",
+      url: GH + "kado_02.glb",
+      lon: 135.437349,
+      lat: 34.793579,
+      height: 8.888973662526322,
+      scale: 9.9,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: -135
+    },
+    {
+      name: "KADO4",
+      url: GH + "kado_04.glb",
+      lon: 135.442945,
+      lat: 34.791555,
+      height: 8.888973662526322,
+      scale: 9.9,
+      rotationX: 0,
+      rotationY: 0,
+      rotationZ: -135
     }
-  }
-
-  createEditor();
-
-  startUpdate();
-
-  console.log(
-    "KADO SYSTEM READY"
-  );
-
-  console.table(
-    KADO_MODELS.map(entry => ({
-      name: entry.name,
-      longitude: entry.settings.lon,
-      latitude: entry.settings.lat,
-      altitude: entry.settings.height,
-      scale: entry.settings.scale,
-      rotationZ: entry.settings.rotationZ
-    }))
-  );
-}
-
-// ============================================================
-// CONTINUOUS UPDATE
-// ============================================================
-
-function startUpdate() {
-
-  if (isRunning) return;
-
-  isRunning = true;
-
-  function loop() {
-
-    if (!isRunning) return;
-
-    for (const entry of KADO_MODELS) {
-
-      updateModel(entry);
-
-    }
-
-    updateEditorDistance();
-
-    animationFrame =
-      requestAnimationFrame(loop);
-  }
-
-  loop();
-}
-
-// ============================================================
-// EDITOR UI
-// ============================================================
-
-function createEditor() {
-
-  const old =
-    document.getElementById(
-      "kado-model-editor"
-    );
-
-  if (old) old.remove();
-
-  editorPanel =
-    document.createElement("div");
-
-  editorPanel.id =
-    "kado-model-editor";
-
-  editorPanel.style.cssText = `
-    position:fixed;
-    top:70px;
-    right:12px;
-    width:310px;
-    max-height:85vh;
-    overflow-y:auto;
-    z-index:999999;
-    background:rgba(12,19,31,0.97);
-    color:white;
-    padding:14px;
-    border:1px solid #58aaff;
-    border-radius:10px;
-    font-family:Arial,sans-serif;
-    font-size:13px;
-    box-shadow:0 4px 25px #0009;
-  `;
-
-  editorPanel.innerHTML = `
-
-    <div style="
-      font-size:18px;
-      font-weight:bold;
-      color:#76bdff;
-      margin-bottom:12px;
-    ">
-      KADO MODEL EDITOR
-    </div>
-
-    <div style="
-      background:#202d40;
-      padding:9px;
-      border-radius:6px;
-      margin-bottom:12px;
-    ">
-      <div>移動範囲：半径2,000m</div>
-
-      <div id="kado-distance"
-        style="color:#70caff;margin-top:5px;">
-        距離：--
-      </div>
-
-      <div id="kado-status"
-        style="margin-top:4px;">
-        読み込み完了
-      </div>
-    </div>
-
-    <div style="margin-bottom:10px;">
-      <label>操作モデル</label>
-
-      <select id="kado-select"
-        style="
-          width:100%;
-          padding:8px;
-          margin-top:5px;
-          background:#26384e;
-          color:white;
-          border:1px solid #52749a;
-          border-radius:5px;
-        ">
-
-        <option value="KADO1">KADO1</option>
-        <option value="KADO2">KADO2</option>
-        <option value="KADO4">KADO4</option>
-
-      </select>
-    </div>
-
-    <div id="kado-controls"></div>
-
-    <button id="kado-reset"
-      style="
-        width:100%;
-        padding:9px;
-        margin-top:12px;
-        background:#267bdc;
-        color:white;
-        border:0;
-        border-radius:5px;
-      ">
-      RESET SELECTED MODEL
-    </button>
-
-    <button id="kado-bright"
-      style="
-        width:100%;
-        padding:9px;
-        margin-top:6px;
-        background:#9271c7;
-        color:white;
-        border:0;
-        border-radius:5px;
-      ">
-      APPLY BRIGHTNESS
-    </button>
-
-    <button id="kado-close"
-      style="
-        width:100%;
-        padding:9px;
-        margin-top:6px;
-        background:#555;
-        color:white;
-        border:0;
-        border-radius:5px;
-      ">
-      CLOSE UI
-    </button>
-
-    <button id="kado-remove"
-      style="
-        width:100%;
-        padding:9px;
-        margin-top:6px;
-        background:#a83232;
-        color:white;
-        border:0;
-        border-radius:5px;
-      ">
-      REMOVE ALL MODELS
-    </button>
-
-  `;
-
-  document.body.appendChild(editorPanel);
-
-  editorPanel.querySelector(
-    "#kado-select"
-  ).addEventListener("change", event => {
-
-    selectedModel = event.target.value;
-
-    buildControls();
-  });
-
-  editorPanel.querySelector(
-    "#kado-reset"
-  ).onclick = resetSelected;
-
-  editorPanel.querySelector(
-    "#kado-bright"
-  ).onclick = () => {
-
-    for (const entry of KADO_MODELS) {
-
-      brightenModel(entry.model);
-
-    }
-
-    console.log("Brightness applied.");
-  };
-
-  editorPanel.querySelector(
-    "#kado-close"
-  ).onclick = () => {
-
-    editorPanel.remove();
-
-    editorPanel = null;
-  };
-
-  editorPanel.querySelector(
-    "#kado-remove"
-  ).onclick = removeAllModels;
-
-  buildControls();
-}
-
-// ============================================================
-// BUILD SLIDERS
-// ============================================================
-
-function buildControls() {
-
-  if (!editorPanel) return;
-
-  const entry =
-    KADO_MODELS.find(
-      item => item.name === selectedModel
-    );
-
-  const controls =
-    editorPanel.querySelector(
-      "#kado-controls"
-    );
-
-  if (!entry) {
-
-    controls.innerHTML =
-      "<div>このモデルは読み込まれていません。</div>";
-
-    return;
-  }
-
-  controls.innerHTML = "";
-
-  const definitions = [
-
-    {
-      label: "Longitude",
-      key: "lon",
-      min: BASE_LON - 0.025,
-      max: BASE_LON + 0.025,
-      step: 0.000001
-    },
-
-    {
-      label: "Latitude",
-      key: "lat",
-      min: BASE_LAT - 0.025,
-      max: BASE_LAT + 0.025,
-      step: 0.000001
-    },
-
-    {
-      label: "Altitude (m)",
-      key: "height",
-      min: -500,
-      max: 20000,
-      step: 0.1
-    },
-
-    {
-      label: "Scale",
-      key: "scale",
-      min: 0.1,
-      max: 100,
-      step: 0.1
-    },
-
-    {
-      label: "Rotation X",
-      key: "rotationX",
-      min: -180,
-      max: 180,
-      step: 1
-    },
-
-    {
-      label: "Rotation Y",
-      key: "rotationY",
-      min: -180,
-      max: 180,
-      step: 1
-    },
-
-    {
-      label: "Rotation Z",
-      key: "rotationZ",
-      min: -180,
-      max: 180,
-      step: 1
-    }
-
   ];
 
-  for (const definition of definitions) {
-
-    const key = definition.key;
-
-    const value = entry.settings[key];
-
-    const row =
-      document.createElement("div");
-
-    row.style.cssText =
-      "margin:13px 0;";
-
-    row.innerHTML = `
-
-      <div style="
-        display:flex;
-        justify-content:space-between;
-        margin-bottom:5px;
-      ">
-
-        <span>${definition.label}</span>
-
-        <span id="value-${key}">
-          ${Number(value).toFixed(
-            key === "lon" || key === "lat" ? 6 : 2
-          )}
-        </span>
-
-      </div>
-
-      <input
-        type="range"
-        id="input-${key}"
-        min="${definition.min}"
-        max="${definition.max}"
-        step="${definition.step}"
-        value="${value}"
-        style="width:100%;"
-      >
-
-    `;
-
-    controls.appendChild(row);
-
-    const input =
-      row.querySelector("input");
-
-    input.addEventListener("input", () => {
-
-      entry.settings[key] =
-        Number(input.value);
-
-      row.querySelector(
-        "#value-" + key
-      ).textContent =
-        Number(input.value).toFixed(
-          key === "lon" || key === "lat" ? 6 : 2
-        );
-
-      updateModel(entry);
+  function waitForGeoFS() {
+    return new Promise(resolve => {
+      const timer = setInterval(() => {
+        if (window.geofs?.api?.viewer && window.Cesium) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 500);
     });
   }
-}
 
-// ============================================================
-// RESET SELECTED MODEL
-// ============================================================
+  await waitForGeoFS();
 
-function resetSelected() {
+  const viewer = geofs.api.viewer;
 
-  const entry =
-    KADO_MODELS.find(
-      item => item.name === selectedModel
-    );
-
-  const original =
-    KADO_CONFIG.find(
-      item => item.name === selectedModel
-    );
-
-  if (!entry || !original) return;
-
-  Object.assign(
-    entry.settings,
-    original
-  );
-
-  buildControls();
-
-  updateModel(entry);
-
-  console.log(
-    "Reset:",
-    selectedModel
-  );
-}
-
-// ============================================================
-// DISTANCE DISPLAY
-// ============================================================
-
-function updateEditorDistance() {
-
-  if (!editorPanel) return;
-
-  const entry =
-    KADO_MODELS.find(
-      item => item.name === selectedModel
-    );
-
-  if (!entry) return;
-
-  const distance =
-    getDistance(entry.settings);
-
-  const distanceElement =
-    editorPanel.querySelector(
-      "#kado-distance"
-    );
-
-  const statusElement =
-    editorPanel.querySelector(
-      "#kado-status"
-    );
-
-  if (distanceElement) {
-
-    distanceElement.textContent =
-      "距離：" + distance.toFixed(1) + "m";
-
-  }
-
-  if (statusElement) {
-
-    statusElement.textContent =
-      distance <= MAX_RADIUS
-        ? "移動範囲内 ✓"
-        : "移動範囲外";
-
-  }
-}
-
-// ============================================================
-// REMOVE ALL MODELS
-// ============================================================
-
-function removeAllModels() {
-
-  isRunning = false;
-
-  if (animationFrame !== null) {
-
-    cancelAnimationFrame(
-      animationFrame
-    );
-
-    animationFrame = null;
-  }
-
-  for (const entry of KADO_MODELS) {
-
-    viewer.scene.primitives.remove(
-      entry.model
-    );
-
-  }
-
-  KADO_MODELS = [];
-
-  if (editorPanel) {
-
-    editorPanel.remove();
-
-    editorPanel = null;
-  }
-
-  console.log(
-    "All KADO models removed."
-  );
-}
-
-// ============================================================
-// GLOBAL API
-// ============================================================
-
-window.KADO_MODELS_CONTROL = {
-
-  list: function() {
-
-    console.table(
-      KADO_MODELS.map(entry => ({
-        name: entry.name,
-        lon: entry.settings.lon,
-        lat: entry.settings.lat,
-        height: entry.settings.height,
-        scale: entry.settings.scale,
-        rotationX: entry.settings.rotationX,
-        rotationY: entry.settings.rotationY,
-        rotationZ: entry.settings.rotationZ
-      }))
-    );
-  },
-
-  update: function(name, values) {
-
-    const entry =
-      KADO_MODELS.find(
-        item => item.name === name
-      );
-
-    if (!entry) {
-
-      console.error(
-        "Model not found:",
-        name
-      );
-
-      return;
-    }
-
-    Object.assign(
-      entry.settings,
-      values
-    );
-
-    updateModel(entry);
-
-    if (
-      editorPanel &&
-      selectedModel === name
-    ) {
-      buildControls();
-    }
-  },
-
-  remove: removeAllModels,
-
-  brightness: function(value) {
-
-    const amount =
-      Number(value);
-
-    if (
-      !Number.isFinite(amount) ||
-      amount < 0 ||
-      amount > 2
-    ) {
-      console.error(
-        "Brightness must be between 0 and 2."
-      );
-
-      return;
-    }
-
-    for (const entry of KADO_MODELS) {
-
-      entry.model.color =
-        new Cesium.Color(
-          amount,
-          amount,
-          amount,
-          1
-        );
-    }
-
-    console.log(
-      "Brightness:",
-      amount
-    );
-  }
-
-};
-
-// ============================================================
-// WAIT FOR GEOFS
-// ============================================================
-
-const wait = setInterval(() => {
-
-  if (
-    window.geofs &&
-    geofs.api &&
-    geofs.api.viewer &&
-    window.Cesium
-  ) {
-
-    clearInterval(wait);
-
-    loadAllModels().catch(error => {
-
-      console.error(
-        "KADO SYSTEM ERROR:",
-        error
-      );
-
+  // Google satellite imagery
+  window.geofs.api.imageryProvider =
+    new Cesium.UrlTemplateImageryProvider({
+      maximumLevel: 30,
+      url: "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"
     });
 
+  window.geofs.api.setImageryProvider(
+    window.geofs.api.imageryProvider,
+    false
+  );
+
+  // Load models
+  for (const config of models) {
+    try {
+      const position = Cesium.Cartesian3.fromDegrees(
+        config.lon,
+        config.lat,
+        config.height
+      );
+
+      const hpr = new Cesium.HeadingPitchRoll(
+        Cesium.Math.toRadians(config.rotationZ),
+        Cesium.Math.toRadians(config.rotationX),
+        Cesium.Math.toRadians(config.rotationY)
+      );
+
+      const rotation =
+        Cesium.Transforms.headingPitchRollQuaternion(
+          position,
+          hpr
+        );
+
+      const model = await Cesium.Model.fromGltf({
+        url: config.url,
+        modelMatrix:
+          Cesium.Matrix4.fromTranslationQuaternionRotationScale(
+            position,
+            rotation,
+            new Cesium.Cartesian3(
+              config.scale,
+              config.scale,
+              config.scale
+            )
+          ),
+        scale: 1
+      });
+
+      viewer.scene.primitives.add(model);
+
+      console.log("[KADO] Loaded:", config.name);
+
+    } catch (error) {
+      console.error("[KADO] Failed:", config.name, error);
+    }
   }
 
-}, 500);
+  console.log("[KADO] All models processed.");
+})();

@@ -5,6 +5,8 @@
   const HF = "https://huggingface.co/supermanone-boop/ITAMI/resolve/main/";
   const GH = "https://raw.githubusercontent.com/supermanone-boop/model/main/";
 
+  const BRIGHTNESS = 3;
+
   const models = [
     {
       name: "KADO1",
@@ -103,6 +105,24 @@
           ),
         scale: 1
       });
+
+      // Brightness correction
+      model.color = new Cesium.Color(
+        BRIGHTNESS,
+        BRIGHTNESS,
+        BRIGHTNESS,
+        1
+      );
+
+      if (
+        Cesium.ModelColorBlendMode &&
+        Cesium.ModelColorBlendMode.HIGHLIGHT !== undefined
+      ) {
+        model.colorBlendMode =
+          Cesium.ModelColorBlendMode.HIGHLIGHT;
+
+        model.colorBlendAmount = 0.18;
+      }
 
       viewer.scene.primitives.add(model);
 

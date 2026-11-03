@@ -5,7 +5,7 @@
   const HF = "https://huggingface.co/supermanone-boop/ITAMI/resolve/main/";
   const GH = "https://raw.githubusercontent.com/supermanone-boop/model/main/";
 
-  const BRIGHTNESS = 2.665;
+  const BRIGHTNESS = 2.065;
 
   const configs = [
     {
